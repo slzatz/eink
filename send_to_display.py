@@ -109,6 +109,7 @@ def process_image(image_path, contrast=1.0, brightness=1.0, saturation=1.0, show
 def upload_to_esp32(binary_data):
     url = f"http://{ESP32_IP}/upload"
     total_len = len(binary_data)
+    print(f"Total binary data size: {total_len} bytes")
     total_chunks = (total_len + CHUNK_SIZE - 1) // CHUNK_SIZE
     
     print(f"Uploading {total_len} bytes to {url}...")
