@@ -4,118 +4,107 @@ This document explains the image processing parameters in `send_to_display.py` a
 
 ## Processing Pipeline
 
-Images go through two distinct stages before being sent to the display:
+Images go through these stages before being sent to the display:
 
 ```
 Input Image
     ↓
 ┌─────────────────────────────┐
-│ Stage 1: Image Enhancement  │  ← Brightness, Contrast, Saturation
+│ 1. Resize/Crop              │  Fit to 1200×1600 (LANCZOS)
+└─────────────────────────────┘
+    ↓
+┌─────────────────────────────┐
+│ 2. Image Enhancement        │  ← Brightness, Contrast, Saturation
 │ (modifies actual pixels)    │
 └─────────────────────────────┘
     ↓
 Enhanced Image (still millions of colors)
     ↓
 ┌─────────────────────────────┐
-│ Stage 2: Color Matching     │  ← Luminance weight, Chroma weight
-│ (picks from 6 palette colors)│
+│ 3. Floyd-Steinberg Dither   │  PIL's built-in quantization
+│ (reduces to 6 palette colors)│
 └─────────────────────────────┘
     ↓
-Dithered Output (6 colors only)
+┌─────────────────────────────┐
+│ 4. Pack & Upload            │  2 pixels per byte → ESP32
+└─────────────────────────────┘
 ```
 
 ## Parameter Reference
 
-### Stage 1: Image Enhancement
+### Image Enhancement Parameters
 
-These parameters modify the actual pixel values of the input image before any color matching occurs.
+These parameters modify the actual pixel values of the input image before dithering.
 
 | Parameter | Flag | Default | Description |
 |-----------|------|---------|-------------|
-| Brightness | `-b` | 1.0 | Makes input lighter (>1) or darker (<1) |
+| Brightness | `-b` | 1.0 | Makes image lighter (>1) or darker (<1) |
 | Contrast | `-c` | 1.2 | Spreads (>1) or compresses (<1) tonal range |
 | Saturation | `-s` | 1.2 | Makes colors more vivid (>1) or muted (<1, 0=grayscale) |
 
-### Stage 2: Color Matching (Lab Color Space)
+### Preview Option
 
-These parameters control how the Floyd-Steinberg dithering algorithm decides which of the 6 palette colors is "closest" to each pixel. The algorithm uses CIE Lab color space, which is perceptually uniform (distances correspond to how humans perceive color differences).
+| Option | Flag | Description |
+|--------|------|-------------|
+| Show preview | `--show` | Save preview to `/tmp/spectra_preview.png` and open with ImageMagick |
 
-| Parameter | Flag | Default | Description |
-|-----------|------|---------|-------------|
-| Luminance weight | `-l` | 0.2 | How much brightness difference matters (range: 0.0-2.0) |
-| Chroma weight | `-C` | 3.0 | How much color/hue difference matters (range: 0.5-5.0) |
+## Understanding Enhancement Parameters
 
-The distance formula is:
-```
-distance = sqrt(luminance_weight × ΔL² + chroma_weight × Δa² + chroma_weight × Δb²)
-```
+### Contrast
+Controls the spread between light and dark areas:
+- **>1.0**: More dramatic light/dark separation, punchier image
+- **<1.0**: Flatter, more compressed tonal range
+- **Default 1.2**: Slight boost helps compensate for e-ink's limited dynamic range
 
-Where L is lightness, and a/b are the color components in Lab space.
+### Brightness
+Shifts the overall lightness:
+- **>1.0**: Brighter image (good for underexposed photos)
+- **<1.0**: Darker image
+- **Default 1.0**: No change
 
-## Why Lab Color Space?
+### Saturation
+Controls color intensity:
+- **>1.0**: More vivid, saturated colors
+- **<1.0**: More muted colors
+- **0.0**: Grayscale
+- **Default 1.2**: Slight boost helps colors pop on the muted e-ink display
 
-The original implementation used PIL's built-in quantization, which matches colors using RGB Euclidean distance. RGB distance is not perceptually uniform—colors that appear very different to humans may have similar RGB distances.
+## Recommended Settings
 
-Lab color space was designed to match human vision:
-- Equal distances in Lab space correspond to equal perceived differences
-- The L channel (luminance) is separate from color (a and b channels)
-- This allows independent control over brightness vs. color matching
-
-## Understanding the Interaction
-
-### Saturation vs. Chroma Weight
-
-These sound similar but operate differently:
-
-| Parameter | What it does | Example |
-|-----------|--------------|---------|
-| **Saturation 1.5** | Changes input pixels: muted pink (200,150,150) becomes vivid pink (220,110,110) | Affects the image before matching |
-| **Chroma weight 5.0** | Changes matching: pink is matched to Red instead of White | Affects algorithm decisions |
-
-### Contrast vs. Luminance Weight
-
-| Parameter | What it does | Example |
-|-----------|--------------|---------|
-| **Contrast 1.5** | Spreads tonal range: mid-grays become lighter/darker | More distinct light/dark areas |
-| **Luminance weight 2.0** | Matching prefers brightness accuracy over color | Dark blue may become black |
-
-## Recommended Settings for E-ink
-
-E-ink displays have inherent limitations: muted colors, limited dynamic range, and only 6 available colors. The defaults are tuned for this:
-
-### Conservative Starting Point
+### Default (good starting point)
 ```bash
 uv run send_to_display.py image.jpg --show
-# Uses: -c 1.2 -s 1.2 -l 0.2 -C 3.0
+# Uses: -c 1.2 -b 1.0 -s 1.2
 ```
 
 ### Test Configurations
 
 | Goal | Command |
 |------|---------|
-| Standard CIE76 (baseline) | `-l 1.0 -C 1.0` |
-| Strong color preference | `-l 0.1 -C 3.0` |
-| Ignore brightness entirely | `-l 0.0 -C 1.0` |
-| Extreme color emphasis | `-l 0.1 -C 5.0` |
-| Tonal/brightness emphasis | `-l 2.0 -C 0.5` |
+| No enhancement (original) | `-c 1.0 -b 1.0 -s 1.0` |
+| High contrast | `-c 1.5` |
+| Vivid colors | `-s 1.5` |
+| Bright + colorful | `-b 1.1 -s 1.4` |
+| Dramatic | `-c 1.4 -s 1.3` |
+| Muted/artistic | `-c 0.9 -s 0.8` |
 
 ### When to Adjust Each Parameter
 
 | Symptom | Try adjusting |
 |---------|---------------|
-| Colors look washed out | ↑ Saturation or ↑ Chroma weight |
-| Image looks flat/gray | ↑ Contrast |
-| Dark colors becoming black | ↓ Luminance weight |
-| Colors shifting unexpectedly | ↑ Luminance weight |
-| Too much dithering noise | Try different chroma/luminance balance |
+| Colors look washed out | ↑ Saturation (`-s 1.4` or higher) |
+| Image looks flat/gray | ↑ Contrast (`-c 1.3` or higher) |
+| Image too dark | ↑ Brightness (`-b 1.1` or higher) |
+| Image too bright/blown out | ↓ Brightness (`-b 0.9`) |
+| Colors too intense/garish | ↓ Saturation (`-s 1.0`) |
 
 ## Best Practices
 
 1. **Always preview first**: Use `--show` to see the dithered result before sending to the display
 
-2. **Test with representative images**: Use photos that have the colors you care about (saturated colors, skin tones, etc.)
+2. **Test with representative images**: Use photos that have the colors you care about
 
-3. **Start with defaults**: The defaults (contrast 1.2, saturation 1.2, luminance 0.2, chroma 3.0) are reasonable for most images
+3. **Start with defaults**: The defaults (contrast 1.2, saturation 1.2) work well for most images
 
 4. **Adjust one parameter at a time**: This helps you understand what each change does
 
@@ -135,3 +124,16 @@ The Spectra 6 display can show these colors:
 | Green | (41, 204, 20) | 0x06 |
 
 Note: These are idealized RGB values. The actual colors produced by the e-ink pigments are more muted. For optimal results, you could measure your display's actual colors and update `PALETTE_RGB` in the script.
+
+## Technical Notes
+
+### Why PIL's Built-in Dithering?
+
+An earlier version of this script used custom Floyd-Steinberg dithering with CIE Lab color space for perceptually-accurate color matching. Testing revealed that while Lab-based matching changed ~43% of pixel assignments compared to PIL's RGB-based approach, the visual results were essentially identical due to how dithering error diffusion works.
+
+PIL's built-in dithering offers:
+- **~24x faster processing** (~1.4 seconds vs ~34 seconds)
+- **Simpler code** (removed numpy dependency)
+- **Equivalent visual quality**
+
+The enhancement parameters (contrast, brightness, saturation) have a much more significant impact on the final image than the color-matching algorithm used during dithering.
