@@ -4,6 +4,11 @@ import argparse
 import requests
 import subprocess
 from PIL import Image, ImageOps, ImageEnhance
+try:
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+except ImportError:
+    pass  # HEIC support unavailable
 from config import ESP32_IP
 
 # --- DOCUMENTATION ---
