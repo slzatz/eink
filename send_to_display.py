@@ -70,7 +70,7 @@ def process_image(image_path, contrast=1.0, brightness=1.0, saturation=1.0, show
         print(f"Error opening image: {e}")
         sys.exit(1)
 
-    img = ImageOps.fit(img, (FRAME_WIDTH, FRAME_HEIGHT), method=Image.Resampling.LANCZOS)
+    img = ImageOps.fit(img, (FRAME_WIDTH, FRAME_HEIGHT), method=Image.Resampling.LANCZOS, centering=(0.5, 0.0))
 
     # 2. Apply Image Enhancements
     if brightness != 1.0:
