@@ -65,7 +65,9 @@ def process_image(image_path, contrast=1.0, brightness=1.0, saturation=1.0, show
 
     # 1. Open and Resize/Crop to fit 1200x1600
     try:
-        img = Image.open(image_path).convert("RGB")
+        img = Image.open(image_path)
+        img = ImageOps.exif_transpose(img)
+        img = img.convert("RGB")
     except Exception as e:
         print(f"Error opening image: {e}")
         sys.exit(1)
